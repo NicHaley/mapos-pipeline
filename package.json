@@ -6,6 +6,7 @@
   "description": "Region build pipeline: OSM extract -> PMTiles + Valhalla tiles + geocode SQLite",
   "scripts": {
     "lint": "biome lint .",
+    "check": "biome check --write .",
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
@@ -14,6 +15,7 @@
     "pmtiles": "^4.4.1"
   },
   "devDependencies": {
+    "@biomejs/biome": "^1.9.4",
     "@types/geojson": "^7946.0.16",
     "@types/mapbox__vector-tile": "^1.3.4",
     "@types/node": "^22.19.1",

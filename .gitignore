@@ -1,3 +1,13 @@
+# Dependencies
+node_modules/
+
+# macOS
+.DS_Store
+
+# Local env files
+.env
+.env.local
+
 # Build scratch and generated artifacts — never commit these.
 work/
 dist/

@@ -1,4 +1,8 @@
-# Region build pipeline
+# MapOS region build pipeline
+
+Builds the region packs that the [MapOS](https://github.com/NicHaley/mapos) desktop app
+downloads for offline maps, routing, and geocoding. Standalone: it shares no code with
+the app, only the artifact format and the R2 bucket they're published to.
 
 Turns one OSM extract into a downloadable region pack — `<region>.pmtiles` (basemap),
 `valhalla_tiles.tar` (routing), `geocode.sqlite` (forward/reverse geocode) — versioned
@@ -12,7 +16,8 @@ leaf extracts — and a batch driver that builds them through the same make stag
 
 ```sh
 brew install osmium-tool pmtiles rclone     # extract/export, tile slicing, R2 upload
-pnpm install                                # in pipeline/ (builds better-sqlite3 for this Node)
+pnpm install                                # build scripts (tsx, biome, pmtiles readers)
+cp .env.example .env                        # then fill in the R2 credentials
 # Docker Desktop running — used for the Valhalla tile build.
 ```
 
@@ -91,7 +96,7 @@ just the regions whose latest logged outcome is a failure. `--limit N` bounds a 
 
 Uploads happen per region (`--no-upload` to skip), so coverage goes live
 progressively and a mid-batch crash publishes nothing half-done — the manifest flip
-stays atomic per region. The R2 credentials come from the repo-root `.env`,
+stays atomic per region. The R2 credentials come from the repo-root `.env` (see `.env.example`),
 loaded automatically (see Upload); without them, pass `--no-upload`.
 
 Notes for a full-world run: builds are sequential by design (the Valhalla docker
@@ -105,7 +110,7 @@ Docker Desktop RAM for the Valhalla stage.
 
 `DIST_DIR` moves the entire built-artifact tree (region packs, `manifest.json`,
 `.sha-cache.json`) somewhere else — typically an external drive for world-scale
-builds. Set it in the repo-root `.env` so make and the batch driver both pick it up:
+builds. Set it in the repo-root `.env` (see `.env.example`) so make and the batch driver both pick it up:
 
 ```sh
 DIST_DIR=/Volumes/T7/mapos-dist
@@ -121,7 +126,10 @@ drive APFS — the checksum cache keys on mtimes, and exFAT's coarse timestamps 
 force re-hashing. Keep the drive from sleeping during multi-day batch runs.
 
 The shared low-zoom world backdrop is built once (not per region) and bundled with the
-app: `make world && make bundle-world`.
+app: `make world && make bundle-world`. `bundle-world` writes into the app repo, which
+lives outside this one — `DASHBOARD_ASSETS` defaults to
+`../mapos/apps/dashboard/resources/basemap-assets`, so it assumes the two checkouts are
+siblings. Override it on the command line or in `.env` if yours aren't.
 
 ## Upload
 

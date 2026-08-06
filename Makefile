@@ -10,7 +10,8 @@
 
 # Repo-root .env (BUCKET, RCLONE_CONFIG_R2_*, DIST_DIR) loads as make syntax —
 # keep values unquoted and $-free. Command-line overrides still win.
--include ../.env
+# Copy .env.example to .env and fill it in.
+-include .env
 # rclone reads credentials from the environment. Guarded: an empty list would
 # turn `export` bare, exporting everything.
 RCLONE_VARS := $(filter RCLONE_CONFIG_%,$(.VARIABLES))
@@ -72,7 +73,10 @@ NE_ADMIN0_URL ?= https://raw.githubusercontent.com/nvkelso/natural-earth-vector/
 # larger file costs nothing at runtime.
 NE_ADMIN1_URL ?= https://raw.githubusercontent.com/nvkelso/natural-earth-vector/master/geojson/ne_10m_admin_1_states_provinces.geojson
 WORLD_WORK := work/_world
-DASHBOARD_ASSETS ?= ../apps/dashboard/resources/basemap-assets
+# `bundle-world` copies the shared low-zoom backdrop into the app repo, which now
+# lives outside this one. Default assumes mapos/ and mapos-pipeline/ are siblings;
+# override on the command line or in .env if your checkout differs.
+DASHBOARD_ASSETS ?= ../mapos/apps/dashboard/resources/basemap-assets
 BUCKET    ?= mapos-regions
 R2_REMOTE ?= r2:$(BUCKET)
 
