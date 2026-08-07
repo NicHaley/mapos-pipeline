@@ -125,11 +125,23 @@ downloads, osmium filtering, and the Valhalla docker bind mount). Format the ext
 drive APFS — the checksum cache keys on mtimes, and exFAT's coarse timestamps would
 force re-hashing. Keep the drive from sleeping during multi-day batch runs.
 
-The shared low-zoom world backdrop is built once (not per region) and bundled with the
-app: `make world && make bundle-world`. `bundle-world` writes into the app repo, which
-lives outside this one — `DASHBOARD_ASSETS` defaults to
-`../mapos/apps/dashboard/resources/basemap-assets`, so it assumes the two checkouts are
-siblings. Override it on the command line or in `.env` if yours aren't.
+## The world backdrop
+
+The shared low-zoom world basemap is built once, not per region, and ships inside the
+app rather than as a downloadable pack:
+
+```sh
+make world world-geocode upload-world
+```
+
+`upload-world` publishes `world.pmtiles` and `world.sqlite` to `_world/` in the same
+public bucket. That bucket is the **only** channel to the app repo — nothing here ever
+writes into an app checkout, so the two repos need no knowledge of each other and a
+maintainer's app build is identical to any contributor's.
+
+The app compares its local copy against the published one on every build, so anything
+not uploaded here simply doesn't exist as far as the app is concerned. `make upload` is
+per-region and never touches `_world/`.
 
 ## Upload
 

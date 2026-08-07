@@ -73,17 +73,13 @@ NE_ADMIN0_URL ?= https://raw.githubusercontent.com/nvkelso/natural-earth-vector/
 # larger file costs nothing at runtime.
 NE_ADMIN1_URL ?= https://raw.githubusercontent.com/nvkelso/natural-earth-vector/master/geojson/ne_10m_admin_1_states_provinces.geojson
 WORLD_WORK := work/_world
-# `bundle-world` copies the shared low-zoom backdrop into the app repo, which now
-# lives outside this one. Default assumes mapos/ and mapos-pipeline/ are siblings;
-# override on the command line or in .env if your checkout differs.
-DASHBOARD_ASSETS ?= ../mapos/apps/dashboard/resources/basemap-assets
 BUCKET    ?= mapos-regions
 R2_REMOTE ?= r2:$(BUCKET)
 
 SRC_PBF  := $(WORK)/source.osm.pbf
 REGION_PBF := $(WORK)/$(REGION).osm.pbf
 
-.PHONY: all extract pmtiles valhalla geocode manifest upload prune clean distclean world world-geocode bundle-world upload-world build-slug dist-guard
+.PHONY: all extract pmtiles valhalla geocode manifest upload prune clean distclean world world-geocode upload-world build-slug dist-guard
 
 all: pmtiles valhalla geocode manifest
 	@echo "==> $(REGION)@$(VERSION) built into $(DIST)"
@@ -321,18 +317,12 @@ world-geocode: dist-guard $(DIST_DIR)/_world/world.pmtiles
 	  --admins $(WORLD_WORK)/world-admins.geojsonseq < $(WORLD_WORK)/world-places.geojsonseq
 	@ls -lh $(DIST_DIR)/_world/world.sqlite
 
-bundle-world: $(DIST_DIR)/_world/world.pmtiles $(DIST_DIR)/_world/world.sqlite
-	@mkdir -p $(DASHBOARD_ASSETS)/basemap
-	cp $(DIST_DIR)/_world/world.pmtiles $(DASHBOARD_ASSETS)/basemap/world.pmtiles
-	cp $(DIST_DIR)/_world/world.sqlite $(DASHBOARD_ASSETS)/basemap/world.sqlite
-	@echo "==> bundled world basemap + geocode index into $(DASHBOARD_ASSETS)/basemap"
-
-# Publish the world artifacts to the public bucket. `make upload` is per-region
-# and never touches _world, so without this they'd only ever exist on this
-# machine — and the app repo is open source while this one isn't, so a
-# contributor has no other way to get them. The app's fetch-basemap-assets.mjs
-# downloads from here. Re-run after every `make world` / `make world-geocode`,
-# or the app repo keeps building against the previous world.
+# Publish the world artifacts to the public bucket. This is the ONLY channel
+# between this repo and the app repo — the app never reads from a pipeline
+# checkout, so a maintainer's build and a fresh clone's build are identical.
+# `make upload` is per-region and never touches _world, so without this the
+# artifacts would only ever exist on this machine. Re-run after every
+# `make world` / `make world-geocode`, or every build keeps using the old one.
 upload-world: $(DIST_DIR)/_world/world.pmtiles $(DIST_DIR)/_world/world.sqlite
 	rclone copy $(DIST_DIR)/_world/ $(R2_REMOTE)/_world/ --progress --s3-no-check-bucket \
 	  --include "world.pmtiles" --include "world.sqlite"
