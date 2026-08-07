@@ -83,7 +83,7 @@ R2_REMOTE ?= r2:$(BUCKET)
 SRC_PBF  := $(WORK)/source.osm.pbf
 REGION_PBF := $(WORK)/$(REGION).osm.pbf
 
-.PHONY: all extract pmtiles valhalla geocode manifest upload prune clean distclean world world-geocode bundle-world build-slug dist-guard
+.PHONY: all extract pmtiles valhalla geocode manifest upload prune clean distclean world world-geocode bundle-world upload-world build-slug dist-guard
 
 all: pmtiles valhalla geocode manifest
 	@echo "==> $(REGION)@$(VERSION) built into $(DIST)"
@@ -326,6 +326,17 @@ bundle-world: $(DIST_DIR)/_world/world.pmtiles $(DIST_DIR)/_world/world.sqlite
 	cp $(DIST_DIR)/_world/world.pmtiles $(DASHBOARD_ASSETS)/basemap/world.pmtiles
 	cp $(DIST_DIR)/_world/world.sqlite $(DASHBOARD_ASSETS)/basemap/world.sqlite
 	@echo "==> bundled world basemap + geocode index into $(DASHBOARD_ASSETS)/basemap"
+
+# Publish the world artifacts to the public bucket. `make upload` is per-region
+# and never touches _world, so without this they'd only ever exist on this
+# machine — and the app repo is open source while this one isn't, so a
+# contributor has no other way to get them. The app's fetch-basemap-assets.mjs
+# downloads from here. Re-run after every `make world` / `make world-geocode`,
+# or the app repo keeps building against the previous world.
+upload-world: $(DIST_DIR)/_world/world.pmtiles $(DIST_DIR)/_world/world.sqlite
+	rclone copy $(DIST_DIR)/_world/ $(R2_REMOTE)/_world/ --progress --s3-no-check-bucket \
+	  --include "world.pmtiles" --include "world.sqlite"
+	@echo "==> published world basemap + geocode index to $(R2_REMOTE)/_world/"
 
 $(DIST_DIR)/_world/world.pmtiles:
 	$(MAKE) world
