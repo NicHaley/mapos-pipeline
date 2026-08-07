@@ -45,8 +45,8 @@ const LOG_PATH = join(PIPELINE_DIR, "failures.log");
 
 // Auto-load the repo-root .env (BUCKET, RCLONE_CONFIG_R2_*, DIST_DIR) so the driver
 // works without sourcing it first; the spawned `make` inherits the result. Real
-// environment variables win over file values. Mirrors the Makefile's `-include ../.env`.
-const ENV_PATH = join(PIPELINE_DIR, "..", ".env");
+// environment variables win over file values. Mirrors the Makefile's `-include .env`.
+const ENV_PATH = join(PIPELINE_DIR, ".env");
 if (existsSync(ENV_PATH)) {
   for (const line of readFileSync(ENV_PATH, "utf8").split("\n")) {
     const m = /^(?:export\s+)?([A-Za-z_][A-Za-z0-9_]*)=(.*)$/.exec(line.trim());
