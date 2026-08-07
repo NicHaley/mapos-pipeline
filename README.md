@@ -81,6 +81,16 @@ pnpm exec tsx scripts/batch-build.ts --group germany --no-upload
 pnpm exec tsx scripts/batch-build.ts                      # the whole world
 ```
 
+**Every run refreshes the world backdrop first** (`world` → `world-geocode` →
+`upload-world`), so one command brings everything current and you never ship a stale
+world by forgetting a separate step. The whole chain takes about 8 seconds against a
+batch that runs for hours, so it isn't gated on staleness. `--no-world` skips it;
+`--no-upload` builds it without publishing. A failure there aborts before any region
+starts, rather than surfacing hours in.
+
+`--limit 0 --no-world` is therefore a no-op, and `--limit 0` on its own is a convenient
+"just refresh and publish the world."
+
 One batch-wide `VERSION` (default: the day the batch starts) stamps every region. A
 region is **skipped** when `dist/<slug>/<version>/` already holds all three artifacts,
 so an interrupted run resumes by re-running with the same version — the driver prints

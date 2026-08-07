@@ -93,6 +93,8 @@ const sleepSec = Number(opt("sleep") ?? "0");
 const limit = opt("limit") ? Number(opt("limit")) : Number.POSITIVE_INFINITY;
 const retain = opt("retain");
 const redoPmtiles = flag("redo-pmtiles");
+// The shared world backdrop refreshes with every batch (see below); this opts out.
+const noWorld = flag("no-world");
 // Extra in-place attempts per region before logging it failed.
 const retries = Number(opt("retries") ?? "1");
 const RETRY_SLEEP_SEC = 30;
@@ -203,11 +205,17 @@ const sleep = (s: number): Promise<void> => new Promise((res) => setTimeout(res,
 // Fail fast on a broken environment instead of logging hundreds of misleading
 // per-region failures (e.g. a PATH without homebrew makes every osmium call die).
 if (!dryRun) {
+  // Scoped to what this run actually does. osmium and docker belong to the
+  // per-region build only, so a world-only run (--limit 0, or a filter that
+  // matched nothing) must not demand a running Docker daemon.
+  const regionTools: Array<[string, string[]]> = [
+    ["osmium", ["--version"]],
+    ["docker", ["info"]] // also verifies the daemon is actually running
+  ];
   const checks: Array<[string, string[]]> = [
     ["make", ["--version"]],
-    ["osmium", ["--version"]],
     ["pmtiles", ["--help"]],
-    ["docker", ["info"]], // also verifies the daemon is actually running
+    ...(regions.length > 0 ? regionTools : []),
     ...(noUpload ? [] : [["rclone", ["--version"]] as [string, string[]]])
   ];
   const missing = checks
@@ -237,6 +245,36 @@ if (!dryRun) {
 
 console.log(`batch: ${regions.length} region(s), VERSION=${version}${dryRun ? " (dry run)" : ""}`);
 console.log(`       resume with: --version ${version}\n`);
+
+// The low-zoom world backdrop is one artifact for the whole catalog rather than a
+// region pack, so it has its own targets and its own upload. Refreshing it here
+// makes a batch the single "bring everything current" command — the app repo can
+// only see what `upload-world` published, so skipping it silently ships a stale
+// world. It runs unconditionally rather than behind a staleness check because it
+// is cheap: the planet extract is z0-6 only, ~45 MB over 5 range requests out of
+// a 137 GB source, and the whole chain is a few seconds against a batch that runs
+// for hours.
+if (!noWorld) {
+  if (dryRun) {
+    console.log(
+      `world — would rebuild from the newest Protomaps build${noUpload ? "" : " and upload"}\n`
+    );
+  } else {
+    console.log("world — refreshing shared basemap + geocode index");
+    try {
+      await runMake("world", []);
+      await runMake("world-geocode", []);
+      if (!noUpload) await runMake("upload-world", []);
+      console.log("world — done\n");
+    } catch (e) {
+      // Abort instead of carrying on: otherwise every region in the batch builds
+      // against a world that failed to refresh and you find out hours later.
+      console.error(`world — failed: ${(e as Error).message}`);
+      console.error("        re-run with --no-world to build regions anyway.");
+      process.exit(1);
+    }
+  }
+}
 
 let built = 0;
 let skipped = 0;
