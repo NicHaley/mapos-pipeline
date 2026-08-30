@@ -4,8 +4,7 @@ Builds the region packs that the [MapOS](https://github.com/NicHaley/mapos) desk
 downloads for offline maps, routing, and geocoding. Standalone: it shares no code with
 the app, only the artifact format and the R2 bucket they're published to.
 
-Turns one OSM extract into a downloadable region pack — `<region>.pmtiles` (basemap),
-`valhalla_tiles.tar` (routing), `geocode.sqlite` (forward/reverse geocode) — versioned
+Turns one OSM extract into a downloadable region pack (basemap, routing, geocode) versioned
 under `dist/<region>/<version>/`, plus a `dist/manifest.json` the app reads to discover
 regions. Uploads to Cloudflare R2.
 
