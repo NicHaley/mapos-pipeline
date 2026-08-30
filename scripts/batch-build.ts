@@ -300,7 +300,7 @@ for (const [i, r] of regions.entries()) {
 
   const logRel = join("work", r.slug, "build.log");
   const logPath = join(PIPELINE_DIR, logRel);
-  let stage = redoPmtiles ? "pmtiles" : "all";
+  let stage = redoPmtiles ? "pmtiles" : "region";
   const attempt = async (): Promise<void> => {
     if (redoPmtiles) {
       stage = "pmtiles";
@@ -308,8 +308,8 @@ for (const [i, r] of regions.entries()) {
       stage = "manifest";
       await runMake("manifest", makeVars(r), logPath);
     } else {
-      stage = "all";
-      await runMake("all", makeVars(r), logPath);
+      stage = "region";
+      await runMake("region", makeVars(r), logPath);
     }
     if (!noUpload) {
       stage = "upload";

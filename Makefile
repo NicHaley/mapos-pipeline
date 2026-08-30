@@ -3,8 +3,8 @@
 # One region -> three artifacts (PMTiles + Valhalla tiles + geocode SQLite)
 # -> versioned dist/ layout + manifest -> R2.
 #
-#   make all             # builds Monaco end to end into dist/
-#   make upload          # push dist/ to R2
+#   make region          # one extract (default: Monaco) into dist/
+#   make upload          # push that region's dist/ to R2
 #
 # ------------------------------------------------------------------ config ----
 
@@ -79,10 +79,17 @@ R2_REMOTE ?= r2:$(BUCKET)
 SRC_PBF  := $(WORK)/source.osm.pbf
 REGION_PBF := $(WORK)/$(REGION).osm.pbf
 
-.PHONY: all extract pmtiles valhalla geocode manifest upload prune clean distclean world world-geocode upload-world build-slug dist-guard
+.PHONY: region all extract pmtiles valhalla geocode manifest upload prune clean distclean world world-geocode upload-world build-slug dist-guard
 
-all: pmtiles valhalla geocode manifest
+region: pmtiles valhalla geocode manifest
 	@echo "==> $(REGION)@$(VERSION) built into $(DIST)"
+
+# Not the catalog. Kept as a named error so `make all` doesn't silently build Monaco.
+all:
+	@echo "error: this Makefile builds one region — 'make all' is not the catalog." >&2
+	@echo "         make region                          # one extract (default: Monaco)" >&2
+	@echo "         pnpm exec tsx scripts/batch-build.ts # every region in regions.json" >&2
+	@exit 1
 
 # An overridden DIST_DIR must already exist: mkdir -p on an unmounted /Volumes
 # path would silently build onto the internal disk.
@@ -98,7 +105,7 @@ endif
 build-slug:
 	@test -n "$(SLUG)" || { echo "usage: make build-slug SLUG=<slug>"; exit 1; }
 	@eval $$(pnpm exec tsx scripts/resolve-region.ts --slug $(SLUG)) && \
-	$(MAKE) all REGION="$$REGION" SRC_URL="$$SRC_URL" VERSION="$(VERSION)" \
+	$(MAKE) region REGION="$$REGION" SRC_URL="$$SRC_URL" VERSION="$(VERSION)" \
 	  NAME="$$NAME" GROUP="$$GROUP" GROUP_NAME="$$GROUP_NAME" COUNTRY="$$COUNTRY" \
 	  CONTINENT="$$CONTINENT" CONTINENT_NAME="$$CONTINENT_NAME" \
 	  $${CITY_LEVEL_MAX:+CITY_LEVEL_MAX="$$CITY_LEVEL_MAX"} \

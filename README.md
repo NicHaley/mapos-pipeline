@@ -21,166 +21,149 @@ cp .env.example .env                        # then fill in the R2 credentials
 # Docker Desktop running — used for the Valhalla tile build.
 ```
 
-If the geocode step fails with a `NODE_MODULE_VERSION` error, run `pnpm rebuild
-better-sqlite3` (the native binary must match your current Node).
+If geocode fails with `NODE_MODULE_VERSION`, run `pnpm rebuild better-sqlite3`
+(the native binary must match your current Node).
 
-## Build
+## Build one region
+
+Make builds a single pack into `dist/<region>/<version>/`. It does not walk the
+catalog or upload.
+
+Smoke-test the pipeline (default extract: Monaco, small enough to finish in minutes):
 
 ```sh
-make all                                    # Monaco (tiny default), end to end
+make region
 ```
 
-Any cataloged region builds by slug — URL, display name, group, and geocode country
-all resolve from `regions.json`:
+A region already in `regions.json` (URL, name, group, country come from the catalog):
 
 ```sh
 make build-slug SLUG=us-georgia
 ```
 
-Or point `SRC_URL` at any extract by hand. `GROUP`/`GROUP_NAME` nest a region under a
-country in the manifest (the download UI shows it as an expandable group); `NAME` is
-the display name:
+An extract you specify. `NAME` is the display name; `GROUP`/`GROUP_NAME` nest it
+under a country in the download UI:
 
 ```sh
-make all REGION=berlin GROUP=germany GROUP_NAME=Germany NAME=Berlin \
+make region REGION=berlin GROUP=germany GROUP_NAME=Germany NAME=Berlin \
   SRC_URL=https://download.geofabrik.de/europe/germany/berlin-latest.osm.pbf
 ```
 
-Pass `BBOX=minlng,minlat,maxlng,maxlat` to clip; otherwise the region's extent is the
-extract's data bounds. Individual stages: `make pmtiles | valhalla | geocode | manifest`.
+Clip with `BBOX=minlng,minlat,maxlng,maxlat`; otherwise the pack uses the extract's
+data bounds. Stages: `make pmtiles`, `valhalla`, `geocode`, `manifest`.
 
-## The catalog (all Geofabrik regions)
+## Catalog
 
-`regions.json` lists every Geofabrik **leaf** extract (~512): subregions where a
-country is split (US states, German states/regbez, English counties...), the country
-itself otherwise. Leaves don't overlap, so the set tiles the world exactly once.
-Continents and redundant combo extracts (dach, alps, us-west...) are excluded; combos
-that are the *only* coverage of their countries (gcc-states, israel-and-palestine...)
-are kept. Subregions group under their country in the manifest; standalone countries
-group under their continent.
+`regions.json` is every Geofabrik **leaf** extract (~512): a country's subregions
+when it is split (US states, German states, …), otherwise the country. Leaves do
+not overlap. Continents and redundant combos (dach, alps, us-west, …) are
+excluded; combos that are a country's only coverage (gcc-states, …) are kept.
+Subregions group under their country in the manifest; standalone countries under
+their continent.
 
-Regenerate when Geofabrik reshuffles (deterministic — an unchanged index reproduces
-the file byte for byte; `--check` verifies without writing):
+Regenerate when Geofabrik reshuffles (deterministic; `--check` verifies without
+writing):
 
 ```sh
 pnpm exec tsx scripts/gen-catalog.ts
 ```
 
-The generator warns about any new shallow extract it can't classify — review it, add
-it to `EXCLUDE` or `REVIEWED_KEEP` in `scripts/gen-catalog.ts`, and re-run.
+Unclassified new extracts are warned — add them to `EXCLUDE` or `REVIEWED_KEEP`
+in `scripts/gen-catalog.ts` and re-run.
 
-## Batch builds
+## Batch (catalog / world)
 
-The batch driver runs the make stages per catalog region — sequentially, uploading
-each region as it finishes and cleaning `work/` behind itself:
+Runs `make region` → `upload` → `clean` for each catalog entry, sequentially.
+Don't run two drivers at once (Valhalla + Geofabrik).
 
 ```sh
-pnpm exec tsx scripts/batch-build.ts --dry-run            # show the work list
-pnpm exec tsx scripts/batch-build.ts --continent europe   # one continent
+pnpm exec tsx scripts/batch-build.ts --dry-run            # work list
+pnpm exec tsx scripts/batch-build.ts --continent europe
 pnpm exec tsx scripts/batch-build.ts --group germany --no-upload
-pnpm exec tsx scripts/batch-build.ts                      # the whole world
+pnpm exec tsx scripts/batch-build.ts                      # whole catalog
 ```
 
-**Every run refreshes the world backdrop first** (`world` → `world-geocode` →
-`upload-world`), so one command brings everything current and you never ship a stale
-world by forgetting a separate step. The whole chain takes about 8 seconds against a
-batch that runs for hours, so it isn't gated on staleness. `--no-world` skips it;
-`--no-upload` builds it without publishing. A failure there aborts before any region
-starts, rather than surfacing hours in.
+Each run refreshes the world backdrop first (~8s) and aborts the batch if that
+fails. `--no-world` skips it; `--limit 0` is "just refresh and publish the world."
 
-`--limit 0 --no-world` is therefore a no-op, and `--limit 0` on its own is a convenient
-"just refresh and publish the world."
+One `VERSION` (default: today) stamps the batch. Complete
+`dist/<slug>/<version>/` dirs are skipped — resume with `--version YYYY-MM-DD`
+(the driver prints the flag). Failures append to `failures.log`;
+`--retry-failed` re-runs those. Also: `--limit N`, `--sleep N`, `--retain N`.
 
-One batch-wide `VERSION` (default: the day the batch starts) stamps every region. A
-region is **skipped** when `dist/<slug>/<version>/` already holds all three artifacts,
-so an interrupted run resumes by re-running with the same version — the driver prints
-the exact flag to use:
+Uploads per region (`--no-upload` to skip). Credentials from `.env`.
 
-```sh
-pnpm exec tsx scripts/batch-build.ts --version 2026-06-06   # resume day 2+
-```
-
-Failures append to `failures.log` and the batch moves on; `--retry-failed` re-runs
-just the regions whose latest logged outcome is a failure. `--limit N` bounds a run,
-`--sleep N` pauses between regions, `--retain N` overrides version retention.
-
-Uploads happen per region (`--no-upload` to skip), so coverage goes live
-progressively and a mid-batch crash publishes nothing half-done — the manifest flip
-stays atomic per region. The R2 credentials come from the repo-root `.env` (see `.env.example`),
-loaded automatically (see Upload); without them, pass `--no-upload`.
-
-Notes for a full-world run: builds are sequential by design (the Valhalla docker
-build dominates wall-clock, and one download at a time is polite to Geofabrik — never
-run two drivers at once). Disk: ~500 regions at `RETAIN=2` is plausibly several
-hundred GB of `dist/`; consider `--retain 1` for the first world pass, or point
-`DIST_DIR` at an external drive (see Output location). Large regions may need more
-Docker Desktop RAM for the Valhalla stage.
+A full-world `dist/` at `RETAIN=2` is several hundred GB — `--retain 1` or an
+external `DIST_DIR` for the first pass. Large extracts may need more Docker RAM.
 
 ## Output location
 
-`DIST_DIR` moves the entire built-artifact tree (region packs, `manifest.json`,
-`.sha-cache.json`) somewhere else — typically an external drive for world-scale
-builds. Set it in the repo-root `.env` (see `.env.example`) so make and the batch driver both pick it up:
+Set `DIST_DIR` in `.env` to put artifacts on another volume (the directory must
+already exist — `mkdir -p` on an unmounted `/Volumes/...` would silently build
+onto the internal disk):
 
 ```sh
 DIST_DIR=/Volumes/T7/mapos-dist
 ```
 
-The directory must already exist — every dist-touching target checks this first
-(`dist-guard`), because `mkdir -p` on an unmounted `/Volumes/...` path would silently
-create a plain folder on the internal disk and build into the wrong place.
+`work/` stays local (hot I/O: downloads, osmium, Valhalla's docker mount). Format
+the drive APFS — the checksum cache keys on mtimes, and exFAT's are too coarse.
+Keep it from sleeping on multi-day runs.
 
-`work/` intermediates deliberately stay local: that's the hot I/O path (source pbf
-downloads, osmium filtering, and the Valhalla docker bind mount). Format the external
-drive APFS — the checksum cache keys on mtimes, and exFAT's coarse timestamps would
-force re-hashing. Keep the drive from sleeping during multi-day batch runs.
+## World backdrop
 
-## The world backdrop
-
-The shared low-zoom world basemap is built once, not per region, and ships inside the
-app rather than as a downloadable pack:
+Low-zoom world basemap, built once, shipped inside the app rather than as a pack.
+The batch driver refreshes it; to do it alone:
 
 ```sh
 make world world-geocode upload-world
 ```
 
-`upload-world` publishes `world.pmtiles` and `world.sqlite` to `_world/` in the same
-public bucket. That bucket is the **only** channel to the app repo — nothing here ever
-writes into an app checkout, so the two repos need no knowledge of each other and a
-maintainer's app build is identical to any contributor's.
-
-The app compares its local copy against the published one on every build, so anything
-not uploaded here simply doesn't exist as far as the app is concerned. `make upload` is
-per-region and never touches `_world/`.
+`upload-world` publishes `world.pmtiles` and `world.sqlite` to `_world/` on R2 —
+the only channel to the app repo. `make upload` is per-region and never touches
+`_world/`.
 
 ## Upload
 
-`make upload` reads `BUCKET` and the `RCLONE_CONFIG_R2_*` credentials from the repo-root
-`.env`. Both make and the batch driver load it automatically — no sourcing needed:
-
 ```sh
-make upload                                 # artifacts -> prune -> manifest (atomic)
+make upload                                 # artifacts → prune → manifest (atomic)
 ```
 
-Because the file doubles as make syntax, keep values unquoted and free of `$`
-(make would keep the quotes / expand the `$`). Per-invocation overrides still win:
-`make upload DIST_DIR=...`.
-
-It uploads artifacts, prunes superseded versions, then flips `manifest.json` last so a
-client never sees a manifest pointing at a half-uploaded version.
+Reads `BUCKET` and `RCLONE_CONFIG_R2_*` from `.env`. Artifacts go up first,
+`manifest.json` last, so a client never sees a half-uploaded version. Overrides
+still win: `make upload DIST_DIR=...`.
 
 ## Versions & retention
 
-Each build writes `dist/<region>/<VERSION>/` (`VERSION` defaults to today's date), and
-the manifest tracks them per region with a `latest` pointer — so client updates are
-atomic. Only the newest `RETAIN` versions (default **2**: live + previous) are kept;
-older ones are pruned from disk **and** R2 on every `make upload`. Bump retention per
-build with `RETAIN=3`, or prune manually with `make prune`.
-
-R2 storage is ~$0.015/GB-month with **no egress fees**, so cost scales with retained
-bytes only — keeping 2 versions, not full history, is what keeps world-scale builds
-cheap.
+Each build is `dist/<region>/<VERSION>/` (`VERSION` defaults to today). The
+manifest keeps a `latest` pointer per region. Only the newest `RETAIN` versions
+(default **2**: live + previous) are kept; older ones are pruned from disk and
+R2 on `make upload`. Override with `RETAIN=3`, or `make prune`.
 
 ## Cleanup
 
-`make clean` removes `work/` intermediates; `make distclean` also wipes `dist/`.
+`make clean` removes `work/`; `make distclean` also wipes `dist/`.
+
+## Built on
+
+[OpenStreetMap](https://www.openstreetmap.org/copyright) ·
+[Protomaps](https://protomaps.com) ·
+[Valhalla](https://github.com/valhalla/valhalla) ·
+[Geofabrik](https://www.geofabrik.de) ·
+[Natural Earth](https://www.naturalearthdata.com) ·
+[Wikidata](https://www.wikidata.org)
+
+Map data © OpenStreetMap contributors, available under the
+[Open Database License](https://www.openstreetmap.org/copyright).
+
+## License
+
+[Apache-2.0](LICENSE)
+
+## Contact
+
+[hello@mapos.md](mailto:hello@mapos.md)
+
+## Contributing
+
+See [CONTRIBUTING.md](CONTRIBUTING.md) for conventions and how to submit changes.
