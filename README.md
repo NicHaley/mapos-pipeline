@@ -132,6 +132,24 @@ Reads `BUCKET` and `RCLONE_CONFIG_R2_*` from `.env`. Artifacts go up first,
 `manifest.json` last, so a client never sees a half-uploaded version. Overrides
 still win: `make upload DIST_DIR=...`.
 
+## Trimming the catalog (maintenance mode)
+
+Only a few regions stay published; the rest are built on request
+([issue template](https://github.com/NicHaley/mapos/issues/new?template=region_request.yml)).
+To cut the bucket down to a keep list:
+
+```sh
+pnpm exec tsx scripts/trim-r2.ts --keep quebec,ontario,portugal           # plan
+pnpm exec tsx scripts/trim-r2.ts --keep quebec,ontario,portugal --apply   # do it
+```
+
+Uploads a manifest listing only the kept regions, then purges every other region
+prefix (`_world/` is untouched). **Afterwards, `make upload` must only ever see the
+kept regions in `DIST_DIR`** — the manifest is regenerated from a scan of that
+directory, so a stale `dist/<region>/` for a purged region would re-list it and
+point clients at files that no longer exist. Delete those directories (or use a
+fresh `DIST_DIR`) before the next upload.
+
 ## Versions & retention
 
 Each build is `dist/<region>/<VERSION>/` (`VERSION` defaults to today). The
