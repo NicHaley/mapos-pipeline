@@ -132,6 +132,20 @@ Reads `BUCKET` and `RCLONE_CONFIG_R2_*` from `.env`. Artifacts go up first,
 `manifest.json` last, so a client never sees a half-uploaded version. Overrides
 still win: `make upload DIST_DIR=...`.
 
+### Putting a region back
+
+The batch drive keeps every built region plus the `manifest.json` that catalogued
+them, so a request is a re-upload, not a rebuild:
+
+```sh
+pnpm exec tsx scripts/restore-r2.ts --dist /Volumes/MapOS/mapos-dist \
+  --groups united-kingdom,spain,france,italy --slugs monaco            # plan
+pnpm exec tsx scripts/restore-r2.ts --dist ... --groups ... --slugs ... --apply
+```
+
+Artifacts go up first, then the live manifest is rewritten with the restored
+entries merged in. Regions already live are skipped, so re-running is safe.
+
 ## Versions & retention
 
 Each build is `dist/<region>/<VERSION>/` (`VERSION` defaults to today). The
